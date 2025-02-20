@@ -3,11 +3,10 @@ from pydantic import BaseModel, Field, validator
 
 class RecordDTO(BaseModel):
     uuid: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str
-    email: str
+    file_reference: str = None 
 
-    @validator('name')
-    def name_must_be_non_empty(cls, v):
-        if not v.strip():
-            raise ValueError("Name cannot be empty")
+    @validator('file_reference')
+    def file_reference_must_be_valid(cls, v):
+        if v and not isinstance(v, str):
+            raise ValueError("File reference must be a string")
         return v
