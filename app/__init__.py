@@ -11,14 +11,19 @@ def create_app():
     
     # Ensure MongoDB is connected
     with app.app_context():
-        db = mongo.cx  # Get the client
-        if db:
-            print(f"MongoDB connected to {db.address}")
+        db = mongo.db  # Access the database
+        if db is not None:
+            print(f"MongoDB connected to database: {db.name}")
+            # Check if the 'records' collection exists
+            if 'records' in db.list_collection_names():
+                print("'records' collection exists.")
+            else:
+                print("'records' collection does not exist.")
         else:
-            print("Failed to connect to MongoDB")
+            print("Failed to connect to MongoDB.")
     
     # Now import routes AFTER initializing mongo
     from .routes import api_blueprint
-    app.register_blueprint(api_blueprint)
+    app.register_blueprint(api_blueprint, url_prefix='/api')
 
     return app
