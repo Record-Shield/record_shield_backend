@@ -32,7 +32,7 @@ class Record:
             # Validate data using the RecordDTO
             record_dto = RecordDTO()
             record_data = {
-                "uuid": record_dto.uuid,
+                "recordId": record_dto.recordId,
                 "file_reference": None
             }
 
@@ -61,25 +61,25 @@ class Record:
             raise ValueError(f"Database error: {str(e)}")
 
     @staticmethod
-    def get_one(uuid):
+    def get_one(recordId):
         """
-        Retrieves a single record by uuid.
+        Retrieves a single record by recordId.
         Excludes the MongoDB '_id' field from the result.
         """
         try:
-            return Record.get_collection().find_one({"uuid": uuid}, {"_id": 0})
+            return Record.get_collection().find_one({"recordId": recordId}, {"_id": 0})
         except Exception as e:
             raise ValueError(f"Database error: {str(e)}")
 
     @staticmethod
-    def delete(uuid):
+    def delete(recordId):
         """
-        Deletes a record by uuid.
+        Deletes a record by recordId.
         """
         try:
-            result = Record.get_collection().delete_one({"uuid": uuid})
+            result = Record.get_collection().delete_one({"recordId": recordId})
             if result.deleted_count == 0:
-                raise ValueError(f"No record found with uuid: {uuid}")
+                raise ValueError(f"No record found with recordId: {recordId}")
             return result.deleted_count  # Return the number of documents deleted
         except Exception as e:
             raise ValueError(f"Database error: {str(e)}")

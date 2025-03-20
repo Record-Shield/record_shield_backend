@@ -2,7 +2,8 @@ import uuid
 from pydantic import BaseModel, Field, validator
 
 class RecordDTO(BaseModel):
-    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    userId: str = None
+    recordId: str = Field(default_factory=lambda: str(uuid.uuid4()))
     file_reference: str = None 
 
     @validator('file_reference')
