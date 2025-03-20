@@ -3,50 +3,40 @@ import numpy as np
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 import pickle
 from tensorflow.keras.models import load_model
-import fitz  # PyMuPDF
+import fitz  
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import os
 from transformers import BertTokenizer, TFBertModel
 
-# Load the tokenizer
 with open('latest_tokenizer.pkl', 'rb') as f:
     tokenizer = pickle.load(f)
 
-# Load the model
 loaded_model = load_model('latest_model.keras')
 
-# Load BERT tokenizer and model
 bert_tokenizer = BertTokenizer.from_pretrained('distilbert-base-uncased')
 bert_model = TFBertModel.from_pretrained('distilbert-base-uncased')
 
-# Function to get BERT embeddings for a single word
 def get_bert_embedding(word):
     inputs = bert_tokenizer(word, return_tensors='tf', padding=True, truncation=True, max_length=32)
     outputs = bert_model(inputs)
-    return outputs.last_hidden_state[:, 0, :]  # Use the [CLS] token embedding
+    return outputs.last_hidden_state[:, 0, :]
 
 def deidentify_text(text):
     words = text.split()
 
     processed_words = []
     for word in words:
-        # Tokenize the word
         MAX_SEQUENCE_LENGTH = 1
         sequence = tokenizer.texts_to_sequences([word])
         padded_sequence = pad_sequences(sequence, padding='post', maxlen=MAX_SEQUENCE_LENGTH)
-
-        # Get BERT embedding for the word
         bert_embedding = get_bert_embedding(word).numpy()
-
-        # Squeeze the extra dimension from BERT embeddings
         bert_embedding = np.squeeze(bert_embedding, axis=0)
 
         prediction = loaded_model.predict([np.array([bert_embedding]), padded_sequence])
         print(f"Word: {word}, Prediction: {prediction}")
         predicted_label = np.argmax(prediction, axis=-1)[0] 
 
-        # Map the predicted label to PII or Non-PII
         if predicted_label == 1: 
             processed_words.append("[REDACTED]")
         else:
@@ -83,7 +73,6 @@ def create_deidentified_pdf(text_blocks, output_path):
         page_height = 792 
         y0_adjusted = page_height - y0 
 
-        # Add text to the PDF at the same position
         c.drawString(x0, y0_adjusted, text)
 
     c.save()
@@ -98,10 +87,8 @@ def deidentify_pdf(input_path, output_path):
 
         for block in text_blocks:
             text = block["text"]
-            # Check if the text contains a field delimiter (" - ")
             if " - " in text:
                 field, value = text.split(" - ", 1) 
-                # De-identify the value using the model
                 deidentified_value = deidentify_text(value)
                 block["text"] = f"{field} - {deidentified_value}"
             # else:
