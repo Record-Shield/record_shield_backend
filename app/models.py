@@ -22,32 +22,35 @@ class Record:
         """
         return GridFS(mongo.db)
 
-    @staticmethod
-    def create(file):
+    def create(record_dto):
         """
         Creates a new record in the 'records' collection.
-        Validates the input data using RecordDTO and handles file uploads.
+        Accepts a RecordDTO instance and an optional file.
+        
+        Parameters:
+        - record_dto: an instance of RecordDTO with attributes recordId, recordName, and userId.
+        - file: the file to be uploaded (can be None).
+        
+        Returns:
+        The inserted record's ID.
+        
+        Raises:
+        ValueError: If there is an error during validation or record creation.
         """
         try:
-            # Validate data using the RecordDTO
-            record_dto = RecordDTO()
+            # Build the record data using values from the passed in record_dto.
             record_data = {
                 "recordId": record_dto.recordId,
-                "file_reference": None
+                "recordName": record_dto.recordName,
+                "userId": record_dto.userId
             }
 
-            # Handle file upload
-            if file:
-                fs = Record.get_gridfs()
-                filename = secure_filename(file.filename)
-                file_id = fs.put(file, filename=filename)
-                record_data["file_reference"] = str(file_id)
-
-            # Insert the record into the collection
-            result = Record.get_collection().insert_one(record_data)
-            return result.inserted_id  # Return the ID of the inserted document
+            Record.get_collection().insert_one(record_data)
+            return record_dto.recordId
         except Exception as e:
             raise ValueError(f"Validation error: {str(e)}")
+
+
 
     @staticmethod
     def get_all():
@@ -80,6 +83,6 @@ class Record:
             result = Record.get_collection().delete_one({"recordId": recordId})
             if result.deleted_count == 0:
                 raise ValueError(f"No record found with recordId: {recordId}")
-            return result.deleted_count  # Return the number of documents deleted
+            return result.deleted_count  
         except Exception as e:
             raise ValueError(f"Database error: {str(e)}")
