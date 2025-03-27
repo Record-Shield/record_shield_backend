@@ -1,4 +1,6 @@
 from flask import Blueprint, request, jsonify, send_file
+
+from app.dto import RecordDTO
 from .models import Record
 import pytesseract
 from pdf2image import convert_from_path
@@ -6,6 +8,7 @@ from PIL import Image
 import tempfile
 import os
 import uuid
+import io
 from .deidentification import deidentify_pdf
 
 api_blueprint = Blueprint('api', __name__)
@@ -14,34 +17,36 @@ UPLOAD_DIR = "uploads"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-@api_blueprint.route('/upload', methods=['POST'])
+DEIDNTIFIED_DIR = "deidentified"
+if not os.path.exists(DEIDNTIFIED_DIR):
+    os.makedirs(DEIDNTIFIED_DIR)
+
+@api_blueprint.route('/uploadFile', methods=['POST'])
 def upload_medical_record():
     file = request.files.get('file')
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
 
     try:
-        file_uuid = str(uuid.uuid4())
+        recordId = str(uuid.uuid4())
         file_extension = os.path.splitext(file.filename)[1]
-        file_path = os.path.join(UPLOAD_DIR, f"{file_uuid}{file_extension}")
+        file_path = os.path.join(UPLOAD_DIR, f"{recordId}{file_extension}")
 
         file.save(file_path)
 
-        return jsonify({"message": "File uploaded successfully", "file_uuid": file_uuid}), 200
+        return jsonify({"message": "File uploaded successfully", "recordId": recordId}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@api_blueprint.route('/deidentify', methods=['POST'])
+@api_blueprint.route('/deidentifyFile', methods=['POST'])
 def start_deidentification():
+    record_id = request.args.get("recordId")
+    if not record_id:
+        return jsonify({"error": "recordId is required"}), 400
 
-    data = request.json
-    if not data or "file_uuid" not in data:
-        return jsonify({"error": "file_uuid is required"}), 400
-
-    file_uuid = data["file_uuid"]
-    input_path = os.path.join(UPLOAD_DIR, f"{file_uuid}.pdf") 
-    output_path = os.path.join(UPLOAD_DIR, f"{file_uuid}_deidentified.pdf")
+    input_path = os.path.join(UPLOAD_DIR, f"{record_id}.pdf")
+    output_path = os.path.join(DEIDNTIFIED_DIR, f"{record_id}_deidentified.pdf")
 
     print(f"Input file path: {input_path}")
     print(f"Output file path: {output_path}")
@@ -54,18 +59,28 @@ def start_deidentification():
         if not os.path.exists(output_path):
             return jsonify({"error": "De-identified PDF could not be created"}), 500
 
-        # Delete the original file
         os.remove(input_path)
         print(f"Original file deleted: {input_path}")
 
-        # Return the de-identified PDF file
-        return send_file(output_path, as_attachment=True, download_name="deidentified.pdf")
+                # Read the de-identified file into memory
+        with open(output_path, 'rb') as f:
+            file_data = io.BytesIO(f.read())
+        file_data.seek(0)
+
+        return send_file(file_data,
+                         as_attachment=True,
+                         download_name="deidentified.pdf",
+                         mimetype='application/pdf')
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@api_blueprint.route('/delete_deidentified/<file_uuid>', methods=['DELETE'])
-def delete_deidentified_file(file_uuid):
-    deidentified_path = os.path.join(UPLOAD_DIR, f"{file_uuid}_deidentified.pdf")
+@api_blueprint.route('/delete/deidentifiedFile', methods=['DELETE'])
+def delete_deidentified_file():
+    record_id = request.args.get("recordId")
+    if not record_id:
+        return jsonify({"error": "recordId is required"}), 400
+
+    deidentified_path = os.path.join(DEIDNTIFIED_DIR, f"{record_id}_deidentified.pdf")
 
     if not os.path.exists(deidentified_path):
         return jsonify({"error": "De-identified file not found"}), 404
@@ -76,22 +91,38 @@ def delete_deidentified_file(file_uuid):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@api_blueprint.route('/store', methods=['POST'])
+@api_blueprint.route('/store/deidentifiedFile', methods=['POST'])
 def store_deidentified_file():
-    """
-    API to store the de-identified file in the database.
-    """
-    file = request.files.get('file') 
-    if not file:
-        return jsonify({"error": "No file uploaded"}), 400
+    data = request.get_json()
+    # Validate that all required fields are present in the JSON body
+    required_fields = ["recordId", "recordName", "userId"]
+    missing_fields = [field for field in required_fields if field not in data]
+    if missing_fields:
+        return jsonify({"error": f"Missing required fields: {', '.join(missing_fields)}"}), 400
+
+    record_id = data["recordId"]
+    deidentified_path = os.path.join(DEIDNTIFIED_DIR, f"{record_id}_deidentified.pdf")
+    if not os.path.exists(deidentified_path):
+        return jsonify({"error": "De-identified file not found"}), 404
 
     try:
-        record_id = Record.create(file)
-        return jsonify({"message": "De-identified file stored successfully", "record_id": str(record_id)}), 201
+        # Create a RecordDTO instance and populate it from the JSON body.
+        record_dto = RecordDTO()
+        record_dto.recordId = data["recordId"]
+        record_dto.recordName = data["recordName"]
+        record_dto.userId = data["userId"]
+
+
+        saved_record_id = Record.create(record_dto)
+            
+        return jsonify({
+            "message": "De-identified file stored successfully",
+            "record_id": str(saved_record_id)
+        }), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-@api_blueprint.route('/records', methods=['GET'])
+@api_blueprint.route('/findAllRecords', methods=['GET'])
 def get_records():
     """
     API to retrieve all de-identified records.
@@ -102,13 +133,17 @@ def get_records():
     except ValueError as e:
         return jsonify({"error": str(e)}), 500
 
-@api_blueprint.route('/records/<recordId>', methods=['GET'])
-def get_record(recordId):
+@api_blueprint.route('/findRecord', methods=['GET'])
+def get_record():
     """
-    API to retrieve a single de-identified record by recordId.
+    API to retrieve a single de-identified record by recordId using query parameters.
     """
+    record_id = request.args.get("recordId")
+    if not record_id:
+        return jsonify({"error": "recordId is required"}), 400
+
     try:
-        record = Record.get_one(recordId)
+        record = Record.get_one(record_id)
         if record:
             return jsonify(record), 200
         else:
@@ -116,13 +151,44 @@ def get_record(recordId):
     except ValueError as e:
         return jsonify({"error": str(e)}), 500
 
-@api_blueprint.route('/records/<recordId>', methods=['DELETE'])
-def delete_record(recordId):
+@api_blueprint.route('/delete/record', methods=['DELETE'])
+def delete_record():
     """
-    API to delete a de-identified record by UUID.
+    API to delete a de-identified record by UUID using query parameters.
     """
+    record_id = request.args.get("recordId")
+    if not record_id:
+        return jsonify({"error": "recordId is required"}), 400
+
+    deidentified_path = os.path.join(DEIDNTIFIED_DIR, f"{record_id}_deidentified.pdf")
+
+    if not os.path.exists(deidentified_path):
+        return jsonify({"error": "De-identified file not found"}), 404
+    
     try:
-        deleted_count = Record.delete(recordId)
+        deleted_count = Record.delete(record_id)
+        os.remove(deidentified_path)
         return jsonify({"message": "Record deleted successfully", "deleted_count": deleted_count}), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+
+@api_blueprint.route('/download/record', methods=['GET'])
+def download_file():
+    record_id = request.args.get("recordId")
+    if not record_id:
+        return jsonify({"error": "recordId is required"}), 400
+
+    file_path = os.path.join(DEIDNTIFIED_DIR, f"{record_id}_deidentified.pdf")
+    if not os.path.exists(file_path):
+        return jsonify({"error": "File not found"}), 404
+
+    try:
+        with open(file_path, 'rb') as f:
+            file_data = io.BytesIO(f.read())
+        file_data.seek(0)
+        return send_file(file_data,
+                    as_attachment=True,
+                    download_name="deidentified.pdf",
+                    mimetype='application/pdf')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
