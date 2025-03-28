@@ -10,6 +10,7 @@ import os
 import uuid
 import io
 from .deidentification import deidentify_pdf
+from datetime import datetime
 
 api_blueprint = Blueprint('api', __name__)
 
@@ -62,7 +63,7 @@ def start_deidentification():
         os.remove(input_path)
         print(f"Original file deleted: {input_path}")
 
-                # Read the de-identified file into memory
+        # Read the de-identified file into memory
         with open(output_path, 'rb') as f:
             file_data = io.BytesIO(f.read())
         file_data.seek(0)
@@ -111,6 +112,7 @@ def store_deidentified_file():
         record_dto.recordId = data["recordId"]
         record_dto.recordName = data["recordName"]
         record_dto.userId = data["userId"]
+        record_dto.deidentificationDate = datetime.now()
 
 
         saved_record_id = Record.create(record_dto)
@@ -124,11 +126,12 @@ def store_deidentified_file():
 
 @api_blueprint.route('/findAllRecords', methods=['GET'])
 def get_records():
+    user_id = request.args.get("userId")
     """
     API to retrieve all de-identified records.
     """
     try:
-        records = Record.get_all()
+        records = Record.get_all(user_id)
         return jsonify(records), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 500
@@ -190,5 +193,18 @@ def download_file():
                     as_attachment=True,
                     download_name="deidentified.pdf",
                     mimetype='application/pdf')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@api_blueprint.route('/stats/deidentified', methods=['GET'])
+def get_deidentified_stats():
+    user_id = request.args.get("userId")
+    week = request.args.get("week", "this")
+    if not user_id:
+        return jsonify({"error": "userId is required"}), 400
+
+    try:
+        stats = Record.get_deidentification_counts(user_id, week)
+        return jsonify(stats), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
