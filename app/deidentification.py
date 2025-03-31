@@ -47,32 +47,75 @@ def deidentify_text(text):
 def extract_text_and_positions(pdf_path):
     doc = fitz.open(pdf_path)
     text_blocks = []
-
+    
+    # Use detailed extraction to get font and color info.
     for page_num in range(len(doc)):
         page = doc.load_page(page_num)
-        blocks = page.get_text("blocks") 
+        blocks = page.get_text("dict")["blocks"]
         for block in blocks:
-            x0, y0, x1, y1, text, block_no, block_type = block
-            text_blocks.append({
-                "page_num": page_num,
-                "text": text.strip(),
-                "position": (x0, y0, x1, y1)
-            })
-
-    text_blocks.sort(key=lambda block: block["position"][1], reverse=False)
+            if "lines" in block:
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        text = span.get("text", "").strip()
+                        if not text:
+                            continue
+                        bbox = span.get("bbox", (0, 0, 0, 0))
+                        font = span.get("font", "Helvetica")
+                        size = span.get("size", 12)
+                        
+                        color_int = span.get("color", 0)
+                        r = ((color_int >> 16) & 0xFF) / 255.0
+                        g = ((color_int >> 8) & 0xFF) / 255.0
+                        b = (color_int & 0xFF) / 255.0
+                        rgb_color = (r, g, b)
+                        
+                        text_blocks.append({
+                            "page_num": page_num,
+                            "text": text,
+                            "position": bbox,
+                            "font": font,
+                            "size": size,
+                            "color": rgb_color
+                        })
+    
+    # Sort blocks by page number then by vertical position (y-coordinate)
+    text_blocks.sort(key=lambda block: (block["page_num"], block["position"][1]))
     return text_blocks
 
 def create_deidentified_pdf(text_blocks, output_path):
     c = canvas.Canvas(output_path, pagesize=letter)
+    page_height = letter[1]
+    current_page = -1
+
+    # font_mapping = {
+    #     "Aptos-Bold": "Helvetica-Bold",
+    #     "Aptos-Regular": "Helvetica",
+    # }
 
     for block in text_blocks:
         page_num = block["page_num"]
+        if page_num != current_page:
+            if current_page != -1:
+                c.showPage()
+            current_page = page_num
+
         text = block["text"]
         x0, y0, x1, y1 = block["position"]
+        y0_adjusted = page_height - y0
 
-        page_height = 792 
-        y0_adjusted = page_height - y0 
-
+        font_name = block.get("font", "Helvetica")
+        if "," in font_name:
+            font_name = font_name.replace(",", "-")
+        # if font_name in font_mapping:
+        #     font_name = font_mapping[font_name]
+        font_size = block.get("size", 12)
+        color = block.get("color", (0, 0, 0))
+        
+        try:
+            c.setFont(font_name, font_size)
+        except Exception as e:
+            c.setFont("Helvetica", font_size)
+        c.setFillColorRGB(*color)
         c.drawString(x0, y0_adjusted, text)
 
     c.save()
