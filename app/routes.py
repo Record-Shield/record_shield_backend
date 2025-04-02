@@ -212,7 +212,7 @@ def get_deidentified_stats():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
-@api_blueprint.route('/users', methods=['GET'])
+@api_blueprint.route('/findAllUsers', methods=['GET'])
 def get_users():
     try:
         token = get_management_token()
