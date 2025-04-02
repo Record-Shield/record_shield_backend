@@ -62,7 +62,6 @@ def extract_text_and_positions(pdf_path):
                         bbox = span.get("bbox", (0, 0, 0, 0))
                         font = span.get("font", "Helvetica")
                         size = span.get("size", 12)
-                        
                         color_int = span.get("color", 0)
                         r = ((color_int >> 16) & 0xFF) / 255.0
                         g = ((color_int >> 8) & 0xFF) / 255.0
@@ -78,7 +77,6 @@ def extract_text_and_positions(pdf_path):
                             "color": rgb_color
                         })
     
-    # Sort blocks by page number then by vertical position (y-coordinate)
     text_blocks.sort(key=lambda block: (block["page_num"], block["position"][1]))
     return text_blocks
 
