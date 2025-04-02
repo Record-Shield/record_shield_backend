@@ -11,6 +11,9 @@ import uuid
 import io
 from .deidentification import deidentify_pdf
 from datetime import datetime
+from .users import get_management_token
+import requests
+from config import Config
 
 api_blueprint = Blueprint('api', __name__)
 
@@ -206,5 +209,19 @@ def get_deidentified_stats():
     try:
         stats = Record.get_deidentification_counts(user_id, week)
         return jsonify(stats), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@api_blueprint.route('/users', methods=['GET'])
+def get_users():
+    try:
+        token = get_management_token()
+        headers = {
+            'Authorization': f'Bearer {token}'
+        }
+        users_url = f'https://{Config.AUTH0_DOMAIN}/api/v2/users'
+        users_response = requests.get(users_url, headers=headers)
+        users_response.raise_for_status()
+        return jsonify(users_response.json()), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
